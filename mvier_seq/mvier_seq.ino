@@ -26,7 +26,6 @@ void setup()
 	
 	pinMode(SPI_SAP, OUTPUT);
 	digitalWrite(SPI_SAP, HIGH);
-	
 }
 
 
@@ -44,8 +43,6 @@ void buttons_read(void)
 	btn_input[5] = SPI.transfer(5);
 	btn_input[6] = SPI.transfer(6);
 	btn_input[7] = SPI.transfer(7);
-	
-	Serial.println("test"); 
 }
 
 
@@ -63,9 +60,9 @@ void buttons_check(void)
 				{	
 					Serial.println( button_id ); 
 					// write to usb midi buffer
-					//midiEventPacket_t event = {0x09, 0x90, button_id, 1};
-					//MidiUSB.sendMIDI(event);
-					//usb_midi_msg_cnt++;
+					midiEventPacket_t event = {0x09, 0x90, button_id, 1};
+					MidiUSB.sendMIDI(event);
+					usb_midi_msg_cnt++;
 					btn_debounce_array[button_id] = BTN_DEAD_TIME;
 				}
 			}
@@ -88,7 +85,8 @@ void flush_usb_midi(void)
 {
 	if( usb_midi_msg_cnt > 0 )
 	{
-		//flush usb midi
+		MidiUSB.flush();
+		usb_midi_msg_cnt = 0;
 	}
 }
 
