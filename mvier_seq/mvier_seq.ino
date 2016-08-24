@@ -1,13 +1,13 @@
 #include <SPI.h>
 #include "MIDIUSB.h"
 
-#define SPI_SCK 13
-#define SPI_SAP 10
-#define SPI_SDI 12
+#define SPI_SCK 13  //grau 165_P2
+#define SPI_SAP 10  //lila 165_P1
+#define SPI_SDI 12  //blau 165_P9
 
 #define BTN_MASK 0b00000001
 #define BTN_DEAD_TIME  100
-#define NUM_REGS 2
+#define NUM_REGS 8
 #define NUM_BTNS (NUM_REGS * 8)
 
 uint32_t currentMillis  = 0;
@@ -26,6 +26,7 @@ void setup()
 	
 	pinMode(SPI_SAP, OUTPUT);
 	digitalWrite(SPI_SAP, HIGH);
+	
 }
 
 
@@ -37,16 +38,14 @@ void buttons_read(void)
 
 	btn_input[0] = SPI.transfer(0);
 	btn_input[1] = SPI.transfer(1);
-    
-#if 0
 	btn_input[2] = SPI.transfer(2);
 	btn_input[3] = SPI.transfer(3);
 	btn_input[4] = SPI.transfer(4);
 	btn_input[5] = SPI.transfer(5);
 	btn_input[6] = SPI.transfer(6);
 	btn_input[7] = SPI.transfer(7);
-#endif
-
+	
+	Serial.println("test"); 
 }
 
 
@@ -64,9 +63,9 @@ void buttons_check(void)
 				{	
 					Serial.println( button_id ); 
 					// write to usb midi buffer
-					midiEventPacket_t event = {0x09, 0x90, button_id, 1};
-					MidiUSB.sendMIDI(event);
-					usb_midi_msg_cnt++;
+					//midiEventPacket_t event = {0x09, 0x90, button_id, 1};
+					//MidiUSB.sendMIDI(event);
+					//usb_midi_msg_cnt++;
 					btn_debounce_array[button_id] = BTN_DEAD_TIME;
 				}
 			}
