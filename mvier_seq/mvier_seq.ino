@@ -1,3 +1,29 @@
+/** ****************************************************************************
+	@date	2016-09-30
+	@author	dan@stekgreif.com
+	@brief	- Arduino Micro
+			- Atmega32U4
+			- 64 RGBW LEDS (Neopixel)
+			- 64 buttons via shift register (74HC165)
+
+	MIDI Messages:
+	90	Note On			Buttons, LEDs
+	B0	Control Change	Analog Inputs
+	F0	Channel Mode	System
+
+	RGBW Commands:
+	Ch	Cmd
+	0	R
+	1	G
+	2	B
+	3	W
+	4	Color Table (val: 0..127)
+	5	Update
+	6	All RGBWs
+	7	All off
+	*NOTE:	Commands via Ch 0..4 need the update command to be shown
+			Ch 7 is updated automaticly
+*******************************************************************************/
 #include <SPI.h>
 #include "MIDIUSB.h"
 #include "Adafruit_NeoPixel.h"
@@ -21,6 +47,16 @@
 #define _BLU 3
 #define _WHT 0
 
+
+uint8_t col_table[6][4] = {
+	{ 50,  0,  0,  0},	// 0 red	relsub0
+	{  0, 50,  0,  0},	// 1 green	relsub1
+	{  0,  0, 50,  0},	// 2 blue	relsub2
+	{ 40,  0, 40,  0},	// 3 purple	relsub3
+	{  0,  0,  0, 50},	// 4 white	stepled
+	{  0,  0,  0,  0},	// 0 off
+};
+
 uint32_t currentMillis  = 0;
 uint32_t previousMillis = 0;
 uint8_t  sched_cnt = 0;
@@ -42,205 +78,216 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRBW + NEO_KHZ8
 
 
 
-
+/** ****************************************************************************
+	inits spi bus for buttons and clears leds
+*******************************************************************************/
 void setup()
 {
-  Serial.begin(115200);
-  SPI.begin();
-  SPI.setDataMode(SPI_MODE3);
+	Serial.begin(115200);
+	SPI.begin();
+	SPI.setDataMode(SPI_MODE3);
 
-  pinMode(SPI_SAP, OUTPUT);
-  digitalWrite(SPI_SAP, HIGH);
+	pinMode(SPI_SAP, OUTPUT);
+	digitalWrite(SPI_SAP, HIGH);
 
-  pixels.begin();
-  pixels.show();
+	pixels.begin();
+	pixels.show();
 }
 
 
 
+/** ****************************************************************************
+
+*******************************************************************************/
 void buttons_read(void)
 {
-  digitalWrite(SPI_SAP, LOW);
-  digitalWrite(SPI_SAP, HIGH);
+	digitalWrite(SPI_SAP, LOW);
+	digitalWrite(SPI_SAP, HIGH);
 
-  btn_input[0] = SPI.transfer(0);
-  btn_input[1] = SPI.transfer(1);
-  btn_input[2] = SPI.transfer(2);
-  btn_input[3] = SPI.transfer(3);
-  btn_input[4] = SPI.transfer(4);
-  btn_input[5] = SPI.transfer(5);
-  btn_input[6] = SPI.transfer(6);
-  btn_input[7] = SPI.transfer(7);
+	btn_input[0] = SPI.transfer(0);
+	btn_input[1] = SPI.transfer(1);
+	btn_input[2] = SPI.transfer(2);
+	btn_input[3] = SPI.transfer(3);
+	btn_input[4] = SPI.transfer(4);
+	btn_input[5] = SPI.transfer(5);
+	btn_input[6] = SPI.transfer(6);
+	btn_input[7] = SPI.transfer(7);
 }
 
 
+
+/** ****************************************************************************
+	simple debouncing mechanism; only button pressing, not releasing
+	btn 01234567
+*******************************************************************************/
 void buttons_check(void)
 {
-  // btn 01234567
-  for (uint8_t reg = 0; reg < NUM_REGS; reg++)
-  {
-    for (uint8_t btn = 0; btn < 8; btn++)
-    {
-      if ( (btn_input[reg] & (BTN_MASK << btn ) ) == 0)
-      {
-        uint8_t button_id = 8 * reg + (7 - btn);	//0..63
-        if ( btn_debounce_array[button_id] == 0 )
-        {
-          Serial.println( button_id );
-          // write to usb midi buffer
-          midiEventPacket_t event = {0x09, 0x90, button_id, 1};
-          MidiUSB.sendMIDI(event);
-          usb_midi_msg_cnt++;
-          btn_debounce_array[button_id] = BTN_DEAD_TIME;
-        }
-      }
-    }
-  }
+	for (uint8_t reg = 0; reg < NUM_REGS; reg++)
+	{
+		for (uint8_t btn = 0; btn < 8; btn++)
+		{
+			if ( (btn_input[reg] & (BTN_MASK << btn ) ) == 0)
+			{
+				uint8_t button_id = 8 * reg + (7 - btn);	//0..63
+				if ( btn_debounce_array[button_id] == 0 )
+				{
+					// write to usb midi buffer
+					midiEventPacket_t event = {0x09, 0x90, button_id, 1};
+					MidiUSB.sendMIDI(event);
+					usb_midi_msg_cnt++;
+					btn_debounce_array[button_id] = BTN_DEAD_TIME;
+				}
+			}
+		}
+	}
 }
 
 
+/** ****************************************************************************
+
+*******************************************************************************/
 void buttons_debounce(void)
 {
-  for ( uint8_t btn = 0; btn < NUM_BTNS; btn++ )
-  {
-    if (	btn_debounce_array[btn] > 0)
-      btn_debounce_array[btn]--;
-  }
+	for (uint8_t btn = 0; btn < NUM_BTNS; btn++ )
+	{
+		if( btn_debounce_array[btn] > 0)
+			btn_debounce_array[btn]--;
+	}
 }
 
 
+
+/** ****************************************************************************
+
+*******************************************************************************/
 void flush_usb_midi(void)
 {
-  if ( usb_midi_msg_cnt > 0 )
-  {
-    MidiUSB.flush();
-    usb_midi_msg_cnt = 0;
-  }
+	if ( usb_midi_msg_cnt > 0 )
+	{
+		MidiUSB.flush();
+		usb_midi_msg_cnt = 0;
+	}
 }
 
 
 
-void usb_midi_read()
+/** ****************************************************************************
+	@return	false:	there was no midi data in the buffer
+			true:	there was midi data in the buffer
+*******************************************************************************/
+bool rgbw_usb_midi_process()
 {
-  midiEventPacket_t rx;
+	midiEventPacket_t rx;
+	rx = MidiUSB.read();
+
+	if (rx.header == 0x9) // NOTE ON
+	{
+		color = rx.byte1 & 0b00001111;
+		id = rx.byte2;
+		brightness = rx.byte3 << 1;
+
+		uint32_t prevCol = pixels.getPixelColor(id);
+		prevColor[_BLU] = (uint8_t)  prevCol;
+		prevColor[_GRN] = (uint8_t) (prevCol >> 8);
+		prevColor[_RED] = (uint8_t) (prevCol >> 16);
+		prevColor[_WHT] = (uint8_t) (prevCol >> 24);
 
 
-  rx = MidiUSB.read();
+		// set pixel color
+		switch (color)
+		{
+			case 0: // red
+			{
+				pixels.setPixelColor(id, pixels.Color(brightness, prevColor[_GRN], prevColor[_BLU], prevColor[_WHT]));
+				break;
+			}
+			case 1: // green
+			{
+				pixels.setPixelColor(id, pixels.Color(prevColor[_RED], brightness, prevColor[_BLU], prevColor[_WHT]));
+				break;
+			}
+			case 2: // blue
+			{
+				pixels.setPixelColor(id, pixels.Color(prevColor[_RED], prevColor[_GRN], brightness, prevColor[_WHT]));
+				break;
+			}
+			case 3: // white
+			{
+				pixels.setPixelColor(id, pixels.Color(prevColor[_RED], prevColor[_GRN], prevColor[_BLU], brightness));
+				break;
+			}
+			case 4: // color table
+			{
+				if( id < 6 )
+				{
+					pixels.setPixelColor( id, pixels.Color( col_table[id][0], col_table[id][1], col_table[id][2], col_table[id][3] ));
+				}
+				break;
+			}
+			case 5: // update
+			{
+				pixels.show();
+				break;
+			}
+			case 6: // all RGBWs
+			{
+				break;
+			}
+			case 7: // ALL OFF
+			{
+				for( uint8_t i = 0; i < 64; i++ )
+				{
+					pixels.setPixelColor(i, pixels.Color(0, 0, 0, 0));
+				}
+				pixels.show();
+				break;
+			}
+		}
+		return true;
+	}
 
-  if (rx.header == 0xB) // MIDI_CC
-  {
-    color = rx.byte1 & 0b00001111;
-    id = rx.byte2;
-    brightness = rx.byte3 << 1;
-
-    uint32_t prevCol = pixels.getPixelColor(id);
-    prevColor[_BLU] = (uint8_t)  prevCol;
-    prevColor[_GRN] = (uint8_t) (prevCol >> 8);
-    prevColor[_RED] = (uint8_t) (prevCol >> 16);
-    prevColor[_WHT] = (uint8_t) (prevCol >> 24);
-
-    //Serial.print("LED: color: ");
-
-    // set pixel color
-    switch (color)
-    {
-      case 0: // RED
-        {
-          pixels.setPixelColor(id, pixels.Color(brightness, prevColor[_GRN], prevColor[_BLU], prevColor[_WHT]));
-          //Serial.print("red");
-          rgbw_dirty_flag = 1;
-          break;
-        }
-      case 1: // GREEN
-        {
-          pixels.setPixelColor(id, pixels.Color(prevColor[_RED], brightness, prevColor[_BLU], prevColor[_WHT]));
-          //Serial.print("green");
-          rgbw_dirty_flag = 1;
-          break;
-        }
-      case 2: // BLUE
-        {
-          pixels.setPixelColor(id, pixels.Color(prevColor[_RED], prevColor[_GRN], brightness, prevColor[_WHT]));
-          //Serial.print("blue");
-          rgbw_dirty_flag = 1;
-          break;
-        }
-      case 3: // WHITE
-        {
-          pixels.setPixelColor(id, pixels.Color(prevColor[_RED], prevColor[_GRN], prevColor[_BLU], brightness));
-          //Serial.print("white");
-          rgbw_dirty_flag = 1;
-          break;
-        }
-      case 4: // ALL COLORS
-        {
-          pixels.setPixelColor(id, pixels.Color(brightness, brightness, brightness, brightness));
-          //Serial.print("all colors");
-          rgbw_dirty_flag = 1;
-          break;
-        }
-      case 5: // ALL OFF
-        {
-          for( uint8_t i = 0; i < 64; i++ )
-          {
-            pixels.setPixelColor(i, pixels.Color(0, 0, 0, 0));
-          }
-          rgbw_dirty_flag = 1;
-          break;
-        }
-    }
-  }
-
+	else
+		return false;
 }
 
 
 
 
+/** ****************************************************************************
 
-
-
+*******************************************************************************/
 void loop()
 {
-  currentMillis = millis();
+	currentMillis = millis();
 
-  if ( currentMillis != previousMillis )
-  {
-    sched_cnt++;
+	while(rgbw_usb_midi_process());
 
-    switch (sched_cnt)
-    {
-      case 1:
-        buttons_read();
-        break;
+	if ( currentMillis != previousMillis )
+	{
+		sched_cnt++;
 
-      case 2:
-        buttons_check();
-        break;
+		switch (sched_cnt)
+		{
+			case 1:
+			buttons_read();
+			break;
 
-      case 3:
-        flush_usb_midi();
-        break;
+			case 2:
+			buttons_check();
+			break;
 
-      case 4:
-        usb_midi_read();
-        break;
+			case 3:
+			flush_usb_midi();
+			break;
 
-      case 5:
-        if ( rgbw_dirty_flag )
-        {
-          pixels.show();
-          rgbw_dirty_flag = 0;
-        }
-        break;
+			case 4:
+			buttons_debounce();
+			sched_cnt = 0;
+			break;
+		}
 
-      case 6:
-        buttons_debounce();
-        sched_cnt = 0;
-        break;
-    }
-
-    previousMillis = currentMillis;
-  }
+		previousMillis = currentMillis;
+	}
 }
 
 
