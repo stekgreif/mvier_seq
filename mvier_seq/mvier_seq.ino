@@ -54,7 +54,7 @@ uint8_t col_table[6][4] = {
 	{  0,  0, 50,  0},	// 2 blue	relsub2
 	{ 40,  0, 40,  0},	// 3 purple	relsub3
 	{  0,  0,  0, 50},	// 4 white	stepled
-	{  0,  0,  0,  0},	// 0 off
+	{  0,  0,  0,  0},	// 5 off
 };
 
 uint32_t currentMillis  = 0;
@@ -67,6 +67,7 @@ uint8_t  usb_midi_msg_cnt = 0;
 uint8_t color = 0;
 uint8_t id = 0;
 uint8_t brightness = 0;
+uint8_t col_tab_pos = 0;
 uint8_t prevColor[4] = {};
 int16_t potVal = 0;
 int16_t lastPotVal = 0;
@@ -185,6 +186,7 @@ bool rgbw_usb_midi_process()
 		color = rx.byte1 & 0b00001111;
 		id = rx.byte2;
 		brightness = rx.byte3 << 1;
+    col_tab_pos = rx.byte3 & 0b01111111;
 
 		uint32_t prevCol = pixels.getPixelColor(id);
 		prevColor[_BLU] = (uint8_t)  prevCol;
@@ -218,9 +220,9 @@ bool rgbw_usb_midi_process()
 			}
 			case 4: // color table
 			{
-				if( id < 6 )
+				if( rx.byte3 < 6 )
 				{
-					pixels.setPixelColor( id, pixels.Color( col_table[id][0], col_table[id][1], col_table[id][2], col_table[id][3] ));
+					pixels.setPixelColor( id, pixels.Color( col_table[col_tab_pos][0], col_table[col_tab_pos][1], col_table[col_tab_pos][2], col_table[col_tab_pos][3] ));
 				}
 				break;
 			}
